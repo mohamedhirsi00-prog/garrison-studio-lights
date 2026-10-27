@@ -70,7 +70,9 @@ const tube = (id) => tubes.find((t) => t.id === id);
 
 function lookCmd(id, look) {
   const t = tube(id), bri = Math.max(0, Math.min(100, Math.round(look.bri * master)));
-  return look.mode === "hsi" ? cmdHsi(t, look.hue, look.sat, bri) : cmdCct(t, bri, look.kelvin);
+  if (look.mode === "hsi") return cmdHsi(t, look.hue, look.sat, bri);
+  const [lo, hi] = t.kelvin || [2500, 10000];            // keep white within what this light can do (HB80C: 7500K)
+  return cmdCct(t, bri, Math.max(lo, Math.min(hi, look.kelvin)));
 }
 
 async function attach(device, id) {
