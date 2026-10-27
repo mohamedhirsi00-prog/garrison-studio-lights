@@ -222,7 +222,8 @@ function musicLooks(style, level, pulse, beatNo, wave, t) {
     return out;
   }
   const pal = palette(style);
-  tubes.filter((x) => STAGE.includes(x.job)).forEach((x, n) => {
+  const dancing = $("faceDance").checked ? [...STAGE, "face"] : STAGE;   // face lights join in when ticked
+  tubes.filter((x) => dancing.includes(x.job)).forEach((x, n) => {
     let base = baseLooks[x.job] || { mode: "hsi", hue: pal[0][0], sat: pal[0][1], bri: 40 };
     if (style === "Beat colours") { const [hue, sat] = pal[(beatNo + n * 2) % pal.length]; out[x.id] = { mode: "hsi", hue, sat, bri: base.bri * (0.45 + 0.55 * level) + 30 * pulse }; }
     else if (style === "Beat flash") { const [hue, sat] = pal[(beatNo + n) % pal.length]; out[x.id] = { mode: "hsi", hue, sat, bri: 8 + 92 * pulse }; }
@@ -498,6 +499,9 @@ $("connectAll").addEventListener("click", reconnectAll);
 $("master").addEventListener("input", (e) => { $("masterOut").value = e.target.value; master = e.target.value / 100; applyMaster(); });
 $("sens").addEventListener("input", (e) => { $("sensOut").value = e.target.value; });
 $("coloursBtn").addEventListener("click", openColours);
+$("faceDance").addEventListener("change", (e) => {
+  if (!e.target.checked) tubes.filter((t) => t.job === "face").forEach((t) => show(t.id, baseLooks.face || null));   // steady again
+});
 $("style").addEventListener("change", (e) => { $("styleHint").textContent = STYLE_HINTS[e.target.value]; if (music) setStatus(`Music mode: ${e.target.value}.`); });
 $("musicBtn").addEventListener("click", async () => {
   const b = $("musicBtn");
