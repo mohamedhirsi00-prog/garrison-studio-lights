@@ -20,6 +20,13 @@ const store = {
 };
 let tubes = store.get("tubes", null) || structuredClone(window.TGS_CONFIG.tubes);   // [{id, name, mac, job}]
 let scenes = store.get("scenes", null) || structuredClone(window.TGS_CONFIG.scenes);
+// a tube added on the laptop since this phone saved its own list (e.g. Tube C) joins it, matched by its address
+for (const t of window.TGS_CONFIG.tubes) {
+  if (!tubes.some((x) => x.mac === t.mac)) {
+    let n = 1; while (tubes.some((x) => x.id === `t${n}`)) n++;
+    tubes.push({ ...t, id: `t${n}` });
+  }
+}
 const deviceMap = store.get("devices", {});                                          // browser device id -> tube id
 const saveTubes = () => store.set("tubes", tubes);
 const saveScenes = () => store.set("scenes", scenes);
