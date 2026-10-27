@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261027-220921">
+<link rel="stylesheet" href="style.css?v=20261027-221841">
 </head>
 <body>
 <div id="banner" class="banner" hidden></div>
@@ -40,6 +40,7 @@
       <select id="style">
         <option>Beat colours</option><option>Beat flash</option><option>Level bars</option><option>Colour wave</option><option>Glow</option>
       </select>
+      <button type="button" id="coloursBtn">Colours</button>
     </label>
     <p id="styleHint" class="hint">every beat jumps the stage tubes to the next colour</p>
     <label class="row">
@@ -85,6 +86,21 @@
   </form>
 </dialog>
 
+<!-- one Music mode style's colours -->
+<dialog id="coloursDialog">
+  <form method="dialog">
+    <h2 id="coloursTitle">Colours</h2>
+    <label class="row check" id="useSceneRow"><input id="useScene" type="checkbox"> Use the scene's colours</label>
+    <p id="coloursHint" class="hint"></p>
+    <div id="colourList" class="swatches"></div>
+    <div class="row end">
+      <button type="button" id="addColour">+ Add colour</button>
+      <button value="close" formnovalidate>Close</button>
+      <button type="button" id="saveColours" class="gold">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- press-and-hold menu -->
 <dialog id="sceneMenu">
   <form method="dialog">
@@ -111,7 +127,7 @@
   </form>
 </dialog>
 
-<script src="config.js?v=20261027-220921"></script>
-<script src="app.js?v=20261027-220921"></script>
+<script src="config.js?v=20261027-221841"></script>
+<script src="app.js?v=20261027-221841"></script>
 </body>
 </html>

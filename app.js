@@ -185,37 +185,96 @@ const STYLE_HINTS = {
   "Colour wave": "colours flow from tube to tube, faster when louder",
   "Glow": "gentle: brightness follows the music, in the scene's colours",
 };
-function palette() {                                     // each stage tube's scene colour, and 35 / 70 degrees around it
-  const hues = STAGE.map((j) => baseLooks[j]).filter((l) => l && l.mode === "hsi").map((l) => l.hue);
-  return (hues.length ? hues : [30, 45]).flatMap((h) => [h, h + 35, h - 35, h + 70].map((x) => ((x % 360) + 360) % 360));
+// each style's own colours (the Colours button), starting from the laptop's style_colours.json
+const LEVEL_BAR_DEFAULT = { colours: ["#00c853", "#ffab00", "#d50000"], beat: "#ffffff" };
+let styleColours = store.get("styleColours", null) || structuredClone(window.TGS_CONFIG.style_colours || {});
+const saveStyleColours = () => store.set("styleColours", styleColours);
+function hexHs(c) {                                      // '#rrggbb' -> [hue 0-360, saturation 0-100]
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [Math.round(((h * 60) + 360) % 360), mx ? Math.round(d / mx * 100) : 0];
+}
+const ownColours = (style) => { const o = styleColours[style] || {}; return o.use_scene === false && o.colours && o.colours.length ? o.colours : null; };
+function palette(style) {                                // [hue, sat] pairs: the style's own colours, or the scene's and shades around them
+  const own = ownColours(style);
+  if (own) return own.map(hexHs);
+  const base = STAGE.map((j) => baseLooks[j]).filter((l) => l && l.mode === "hsi");
+  return (base.length ? base : [{ hue: 30, sat: 90 }, { hue: 45, sat: 90 }])
+    .flatMap((b) => [0, 35, -35, 70].map((d) => [(((b.hue + d) % 360) + 360) % 360, b.sat !== undefined ? b.sat : 90]));
 }
 function musicLooks(style, level, pulse, beatNo, wave, t) {
   const out = {};
   if (style === "Level bars") {                          // every tube not set to Not used, in list order, as a bar meter
+    const o = styleColours["Level bars"] || {};
+    const cols = (o.colours && o.colours.length ? o.colours : LEVEL_BAR_DEFAULT.colours).map(hexHs);
+    const flash = hexHs(o.beat || LEVEL_BAR_DEFAULT.beat);
     const bars = tubes.filter((x) => x.job !== "off"), n = bars.length;
     const lit = level > 0.04 ? Math.min(n, Math.ceil(level * n * 1.35 - 0.1)) : 0;
     bars.forEach((x, i) => {
-      const hue = 120 - 120 * (n > 1 ? i / (n - 1) : 0);  // green -> amber -> red
-      if (i < lit) { const top = i === lit - 1 && pulse > 0.6; out[x.id] = { mode: "hsi", hue, sat: top ? 0 : 100, bri: top ? 85 : 65 }; }
-      else out[x.id] = { mode: "hsi", hue, sat: 100, bri: 2 };
+      const [hue, sat] = cols[n > 1 ? Math.round(i / (n - 1) * (cols.length - 1)) : 0];   // bottom -> middle -> top
+      if (i < lit && i === lit - 1 && pulse > 0.6) out[x.id] = { mode: "hsi", hue: flash[0], sat: flash[1], bri: 85 };
+      else out[x.id] = { mode: "hsi", hue, sat, bri: i < lit ? 65 : 2 };
     });
     return out;
   }
-  const pal = palette();
+  const pal = palette(style);
   tubes.filter((x) => STAGE.includes(x.job)).forEach((x, n) => {
-    const base = baseLooks[x.job];
-    if (!base) return;
-    const sat = base.mode === "hsi" ? base.sat : 90;
-    if (style === "Beat colours") out[x.id] = { mode: "hsi", hue: pal[(beatNo + n * 2) % pal.length], sat, bri: base.bri * (0.45 + 0.55 * level) + 30 * pulse };
-    else if (style === "Beat flash") out[x.id] = base.mode === "hsi" ? { ...base, hue: pal[(beatNo + n) % pal.length], bri: 8 + 92 * pulse } : { ...base, bri: 8 + 92 * pulse };
-    else if (style === "Colour wave") out[x.id] = { mode: "hsi", hue: (pal[0] + wave + n * 45) % 360, sat, bri: base.bri * (0.4 + 0.6 * level) + 20 * pulse };
-    else {                                               // Glow
+    let base = baseLooks[x.job] || { mode: "hsi", hue: pal[0][0], sat: pal[0][1], bri: 40 };
+    if (style === "Beat colours") { const [hue, sat] = pal[(beatNo + n * 2) % pal.length]; out[x.id] = { mode: "hsi", hue, sat, bri: base.bri * (0.45 + 0.55 * level) + 30 * pulse }; }
+    else if (style === "Beat flash") { const [hue, sat] = pal[(beatNo + n) % pal.length]; out[x.id] = { mode: "hsi", hue, sat, bri: 8 + 92 * pulse }; }
+    else if (style === "Colour wave") {                  // flows through the colours in order
+      const pos = (wave / 360 * pal.length + n * 0.5) % pal.length, i = Math.floor(pos), f = pos - i;
+      const [h0, s0] = pal[i], [h1, s1] = pal[(i + 1) % pal.length];
+      out[x.id] = { mode: "hsi", hue: (h0 + ((((h1 - h0 + 180) % 360) + 360) % 360 - 180) * f + 360) % 360, sat: s0 + (s1 - s0) * f, bri: base.bri * (0.4 + 0.6 * level) + 20 * pulse };
+    } else {                                             // Glow
+      if (ownColours("Glow")) { const [hue, sat] = pal[n % pal.length]; base = { mode: "hsi", hue, sat, bri: base.bri }; }
       const look = { ...base, bri: base.bri * (0.25 + 0.75 * level) + 25 * pulse };
       if (base.mode === "hsi") look.hue = (base.hue + 14 * Math.sin(2 * Math.PI * t / 20 + n * Math.PI) + 8 * level + 360) % 360;
       out[x.id] = look;
     }
   });
   return out;
+}
+
+// ---- the Colours window: one style's colours ----------------------------------------------------------------------
+function openColours() {
+  const style = $("style").value, d = $("coloursDialog"), box = $("colourList");
+  const o = styleColours[style] || {};
+  const bars = style === "Level bars";
+  let colours = [...(o.colours && o.colours.length ? o.colours : bars ? LEVEL_BAR_DEFAULT.colours : ["#1f5fd6", "#18b5a5", "#d9a441"])];
+  let beat = o.beat || LEVEL_BAR_DEFAULT.beat;
+  $("coloursTitle").textContent = `Colours for ${style}`;
+  $("useSceneRow").hidden = bars; $("addColour").hidden = bars;
+  $("useScene").checked = !bars && o.use_scene !== false;
+  $("coloursHint").textContent = bars ? "The bar meter's colours, from the first tube in the list (bottom) to the last (top)."
+                                      : "Untick to use your own colours, in this order. Tap a colour to change it; × removes it.";
+  const draw = () => {
+    box.innerHTML = "";
+    if (!bars && $("useScene").checked) { box.textContent = "Using the scene's colours (and shades either side of them)."; $("addColour").disabled = true; return; }
+    $("addColour").disabled = false;
+    const swatch = (value, label, onChange, onRemove) => {
+      const w = document.createElement("div"); w.className = "sw";
+      const inp = document.createElement("input"); inp.type = "color"; inp.value = value; inp.addEventListener("input", () => onChange(inp.value));
+      const l = document.createElement("span"); l.textContent = label;
+      w.append(inp, l);
+      if (onRemove) { const x = document.createElement("button"); x.type = "button"; x.textContent = "×"; x.addEventListener("click", onRemove); w.append(x); }
+      box.append(w);
+    };
+    if (bars) {
+      ["Bottom", "Middle", "Top"].forEach((name, i) => swatch(colours[i], name, (v) => { colours[i] = v; }));
+      swatch(beat, "Beat flash", (v) => { beat = v; });
+    } else colours.forEach((c, i) => swatch(c, String(i + 1), (v) => { colours[i] = v; },
+      () => { if (colours.length > 1) { colours.splice(i, 1); draw(); } else alert("Keep at least one colour."); }));
+  };
+  $("useScene").onchange = draw;
+  $("addColour").onclick = () => { colours.push(colours[colours.length - 1] || "#1f5fd6"); draw(); };
+  $("saveColours").onclick = () => {
+    styleColours[style] = bars ? { colours: colours.slice(0, 3), beat } : { use_scene: $("useScene").checked, colours };
+    saveStyleColours(); setStatus(`Saved the colours for ${style}.`); d.close();
+  };
+  draw(); d.showModal();
 }
 async function startMusic() {
   let stream;
@@ -436,6 +495,7 @@ $("newScene").addEventListener("click", () => openMaker(null));
 $("connectAll").addEventListener("click", reconnectAll);
 $("master").addEventListener("input", (e) => { $("masterOut").value = e.target.value; master = e.target.value / 100; applyMaster(); });
 $("sens").addEventListener("input", (e) => { $("sensOut").value = e.target.value; });
+$("coloursBtn").addEventListener("click", openColours);
 $("style").addEventListener("change", (e) => { $("styleHint").textContent = STYLE_HINTS[e.target.value]; if (music) setStatus(`Music mode: ${e.target.value}.`); });
 $("musicBtn").addEventListener("click", async () => {
   const b = $("musicBtn");

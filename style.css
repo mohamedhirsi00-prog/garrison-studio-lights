@@ -55,3 +55,9 @@ dialog input:not([type]) , dialog input[type=text] { flex: 1; font: inherit; pad
 .swatch { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #555; }
 .hue { background: linear-gradient(90deg, red, yellow, lime, cyan, blue, magenta, red); height: 8px; border-radius: 4px; }
 .doing { color: var(--muted); font-size: 12px; width: 100%; }
+.swatches { display: flex; flex-wrap: wrap; gap: 12px; background: var(--panel); border-radius: 10px; padding: 12px; margin: 10px 0; min-height: 60px; color: var(--text); font-size: 14px; }
+.sw { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
+.sw input[type=color] { width: 56px; height: 56px; border: 0; padding: 0; background: none; border-radius: 8px; }
+.sw span { color: var(--muted); font-size: 12px; }
+.sw button { position: absolute; top: -8px; right: -8px; padding: 0 7px; border-radius: 50%; font-size: 14px; line-height: 22px; }
+#coloursBtn { white-space: nowrap; }
