@@ -37,6 +37,7 @@ button.toggle.on { background: var(--gold); color: #111; font-weight: 700; }
 .tube:first-child { border-top: 0; }
 .tube .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tube .name { font-weight: 700; flex: 1; min-width: 90px; }
+#style { flex: 1; font: inherit; padding: 8px; border-radius: 8px; background: #2f353d; color: var(--text); border: 1px solid #444b55; }
 .tube select { font: inherit; padding: 8px; border-radius: 8px; background: #2f353d; color: var(--text); border: 1px solid #444b55; }
 .tube .state { font-size: 13px; color: var(--muted); margin-top: 6px; }
 .tube .state.ok { color: var(--green); }

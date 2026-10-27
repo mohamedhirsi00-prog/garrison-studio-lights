@@ -171,6 +171,45 @@ function applyMaster() { for (const [id, s] of Object.entries(state)) if (s.on) 
 // ---- Music mode: the phone's microphone; level against the last few seconds (works at any volume), a pulse on
 // strong low-end beats (40-180 Hz energy jumping above its average); stage tubes only, about 12 updates a second --
 let music = null;
+const STYLE_HINTS = {
+  "Beat colours": "every beat jumps the stage tubes to the next colour",
+  "Beat flash": "every beat flashes the stage tubes bright, then they drop",
+  "Level bars": "the tubes as a bar meter: green, amber, red",
+  "Colour wave": "colours flow from tube to tube, faster when louder",
+  "Glow": "gentle: brightness follows the music, in the scene's colours",
+};
+function palette() {                                     // each stage tube's scene colour, and 35 / 70 degrees around it
+  const hues = STAGE.map((j) => baseLooks[j]).filter((l) => l && l.mode === "hsi").map((l) => l.hue);
+  return (hues.length ? hues : [30, 45]).flatMap((h) => [h, h + 35, h - 35, h + 70].map((x) => ((x % 360) + 360) % 360));
+}
+function musicLooks(style, level, pulse, beatNo, wave, t) {
+  const out = {};
+  if (style === "Level bars") {                          // every tube not set to Not used, in list order, as a bar meter
+    const bars = tubes.filter((x) => x.job !== "off"), n = bars.length;
+    const lit = level > 0.04 ? Math.min(n, Math.ceil(level * n * 1.35 - 0.1)) : 0;
+    bars.forEach((x, i) => {
+      const hue = 120 - 120 * (n > 1 ? i / (n - 1) : 0);  // green -> amber -> red
+      if (i < lit) { const top = i === lit - 1 && pulse > 0.6; out[x.id] = { mode: "hsi", hue, sat: top ? 0 : 100, bri: top ? 85 : 65 }; }
+      else out[x.id] = { mode: "hsi", hue, sat: 100, bri: 2 };
+    });
+    return out;
+  }
+  const pal = palette();
+  tubes.filter((x) => STAGE.includes(x.job)).forEach((x, n) => {
+    const base = baseLooks[x.job];
+    if (!base) return;
+    const sat = base.mode === "hsi" ? base.sat : 90;
+    if (style === "Beat colours") out[x.id] = { mode: "hsi", hue: pal[(beatNo + n * 2) % pal.length], sat, bri: base.bri * (0.45 + 0.55 * level) + 30 * pulse };
+    else if (style === "Beat flash") out[x.id] = base.mode === "hsi" ? { ...base, hue: pal[(beatNo + n) % pal.length], bri: 8 + 92 * pulse } : { ...base, bri: 8 + 92 * pulse };
+    else if (style === "Colour wave") out[x.id] = { mode: "hsi", hue: (pal[0] + wave + n * 45) % 360, sat, bri: base.bri * (0.4 + 0.6 * level) + 20 * pulse };
+    else {                                               // Glow
+      const look = { ...base, bri: base.bri * (0.25 + 0.75 * level) + 25 * pulse };
+      if (base.mode === "hsi") look.hue = (base.hue + 14 * Math.sin(2 * Math.PI * t / 20 + n * Math.PI) + 8 * level + 360) % 360;
+      out[x.id] = look;
+    }
+  });
+  return out;
+}
 async function startMusic() {
   let stream;
   try {
@@ -180,7 +219,7 @@ async function startMusic() {
   an.fftSize = 2048; src.connect(an);
   const td = new Float32Array(an.fftSize), fd = new Float32Array(an.frequencyBinCount);
   const binHz = ctx.sampleRate / an.fftSize, lo = Math.floor(40 / binHz), hi = Math.ceil(180 / binHz);
-  let ref = 1e-4, env = 0, lowAvg = 1e-6, pulse = 0, t0 = performance.now();
+  let ref = 1e-4, env = 0, lowAvg = 1e-6, pulse = 0, t0 = performance.now(), lastBeat = 0, beats = 0, kicked = 0, wave = 0;
   const sent = {};
   const tick = () => {
     an.getFloatTimeDomainData(td);
@@ -192,24 +231,27 @@ async function startMusic() {
     env += (target - env) * (target > env ? 0.5 : 0.12);
     an.getFloatFrequencyData(fd);
     let low = 0; for (let i = lo; i <= hi; i++) low += Math.pow(10, fd[i] / 10);
-    if (low > lowAvg * 2.2 && rms > ref * 0.25) pulse = 1;
-    lowAvg += (low - lowAvg) * 0.08; pulse *= 0.7;
+    // a beat: the low end jumps well above its average, not near-silent, and at least 0.25 s since the last one
+    const now = performance.now();
+    if (low > lowAvg * 2.2 && rms > ref * 0.25 && now - lastBeat > 250) { lastBeat = now; beats++; }
+    lowAvg += (low - lowAvg) * 0.08;
+    pulse = lastBeat ? Math.exp(-(now - lastBeat) / 180) : 0;      // the beat's glow, fading over about 0.2 s
     const level = rms > 1e-4 ? env : 0;
     document.getElementById("meterBar").style.width = `${Math.round(level * 100)}%`;
     document.getElementById("beat").classList.toggle("on", pulse > 0.5);
     if (!fading) {
-      const t = (performance.now() - t0) / 1000;
-      tubes.filter((x) => STAGE.includes(x.job) && live(x.id)).forEach((x, n) => {
-        const base = baseLooks[x.job];
-        if (!base) return;
-        const look = { ...base, bri: Math.max(2, Math.min(100, base.bri * (0.25 + 0.75 * level) + 25 * pulse)) };
-        if (base.mode === "hsi") look.hue = (base.hue + 14 * Math.sin(2 * Math.PI * t / 20 + n * Math.PI) + 8 * level + 360) % 360;
-        const last = sent[x.id];
-        if (!last || Math.abs(last.bri - look.bri) >= 1 || Math.abs((last.hue || 0) - (look.hue || 0)) >= 1.5) {
-          if (!(state[x.id] && state[x.id].on)) { write(x.id, cmdPower(x, true)); state[x.id] = { on: true, look: { ...base } }; }
-          write(x.id, lookCmd(x.id, look)); sent[x.id] = look;
+      const t = (now - t0) / 1000;
+      wave = (wave + 1.5 + 9 * level + (beats !== kicked ? 25 : 0)) % 360; kicked = beats;
+      const looks = musicLooks(document.getElementById("style").value, level, pulse, beats, wave, t);
+      for (const [id, look] of Object.entries(looks)) {
+        if (!live(id)) continue;
+        look.bri = Math.max(2, Math.min(100, look.bri));
+        const last = sent[id];
+        if (!last || last.mode !== look.mode || Math.abs(last.bri - look.bri) >= 1 || Math.abs((last.hue || 0) - (look.hue || 0)) >= 1.5 || last.sat !== look.sat) {
+          if (!(state[id] && state[id].on)) { write(id, cmdPower(tube(id), true)); state[id] = { on: true, look: { ...look } }; }
+          write(id, lookCmd(id, look)); sent[id] = look;
         }
-      });
+      }
     }
   };
   music = { stream, ctx, timer: setInterval(tick, 83) };
@@ -387,6 +429,7 @@ $("newScene").addEventListener("click", () => openMaker(null));
 $("connectAll").addEventListener("click", reconnectAll);
 $("master").addEventListener("input", (e) => { $("masterOut").value = e.target.value; master = e.target.value / 100; applyMaster(); });
 $("sens").addEventListener("input", (e) => { $("sensOut").value = e.target.value; });
+$("style").addEventListener("change", (e) => { $("styleHint").textContent = STYLE_HINTS[e.target.value]; if (music) setStatus(`Music mode: ${e.target.value}.`); });
 $("musicBtn").addEventListener("click", async () => {
   const b = $("musicBtn");
   if (music) { stopMusic(); b.textContent = "Music mode: OFF"; b.classList.remove("on"); setStatus("Music mode off."); return; }
