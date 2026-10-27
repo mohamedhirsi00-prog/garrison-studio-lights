@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15181c">
+<title>The Garrison Studio Lights</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden></div>
+
+<header>
+  <img src="logo-white.png" alt="The Garrison Studio" class="logo">
+  <h1>The Garrison Studio Lights</h1>
+  <p id="status" class="status">Starting…</p>
+</header>
+
+<main>
+  <section id="scenes" class="scenes"></section>
+
+  <section class="panel">
+    <label class="row">
+      <span>Overall brightness</span>
+      <input id="master" type="range" min="10" max="100" value="100">
+      <output id="masterOut">100</output>
+    </label>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <button id="musicBtn" class="toggle">Music mode: OFF</button>
+      <span class="hint">Listens through the phone's microphone</span>
+    </div>
+    <label class="row">
+      <span>Sensitivity</span>
+      <input id="sens" type="range" min="50" max="200" value="100">
+      <output id="sensOut">100</output>
+    </label>
+    <div class="row">
+      <span>Level</span>
+      <div class="meter"><div id="meterBar"></div></div>
+      <span id="beat" class="beat"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Tubes</h2>
+    <div id="tubes"></div>
+    <p class="hint">Tubes on in app mode, the NEEWER app closed. The first time on this phone, connect each tube once.</p>
+  </section>
+
+  <section class="actions">
+    <button id="newScene">New scene</button>
+    <button id="connectAll">Reconnect</button>
+    <button id="addTube">Add tube</button>
+  </section>
+  <p class="hint center">Press and hold a scene to edit or delete it.</p>
+</main>
+
+<!-- scene maker -->
+<dialog id="maker">
+  <form method="dialog" id="makerForm">
+    <h2>Scene maker</h2>
+    <label class="row"><span>Name</span><input id="sceneName" required maxlength="24"></label>
+    <label class="row check"><input id="live" type="checkbox" checked> Show on the tubes while I adjust</label>
+    <div id="jobPanels"></div>
+    <div class="row wrap">
+      <button type="button" id="copyLR">Copy stage left → stage right</button>
+    </div>
+    <div class="row end">
+      <button value="close" formnovalidate>Close</button>
+      <button type="button" id="saveScene" class="gold">Save scene</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- press-and-hold menu -->
+<dialog id="sceneMenu">
+  <form method="dialog">
+    <h2 id="menuTitle"></h2>
+    <div class="row end">
+      <button value="edit" class="gold">Edit</button>
+      <button value="delete" class="danger">Delete</button>
+      <button value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- add a tube by its Bluetooth address (shown by the laptop program) -->
+<dialog id="addDialog">
+  <form method="dialog">
+    <h2>Add a tube</h2>
+    <p class="hint">The laptop program finds new tubes and shows their address in tubes.json (e.g. FA:6C:0D:2B:E0:DE).</p>
+    <label class="row"><span>Name</span><input id="newName" placeholder="Tube C"></label>
+    <label class="row"><span>Address</span><input id="newMac" placeholder="AA:BB:CC:DD:EE:FF"></label>
+    <div class="row end">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="add" class="gold">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

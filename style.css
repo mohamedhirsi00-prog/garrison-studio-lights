@@ -1,0 +1,56 @@
+:root {
+  --bg: #15181c; --panel: #22272e; --text: #eef1f4; --muted: #9aa4ae; --gold: #d9a441; --red: #b3261e; --green: #5fd38a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", Roboto, system-ui, sans-serif; }
+body { padding: 0 14px calc(24px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; }
+.banner { background: var(--red); color: #fff; font-weight: 700; padding: 12px 14px; margin: 0 -14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.banner[hidden] { display: none; }
+header { text-align: center; padding: 14px 0 4px; }
+.logo { height: 64px; }
+h1 { color: var(--gold); font-size: 22px; margin: 6px 0 2px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+.status { margin: 0; color: var(--text); font-size: 14px; min-height: 1.3em; }
+.scenes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+.scenes button { min-height: 68px; border: 0; border-radius: 10px; color: #fff; font-weight: 700; font-size: 17px;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.scenes button:active { outline: 3px solid var(--gold); }
+.panel { background: var(--panel); border-radius: 10px; padding: 12px; margin: 10px 0; }
+.row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.row > span:first-child { min-width: 92px; color: var(--muted); font-size: 14px; }
+.row.wrap { flex-wrap: wrap; }
+.row.end { justify-content: flex-end; }
+.row.check { color: var(--text); font-size: 14px; }
+input[type=range] { flex: 1; accent-color: var(--gold); min-width: 0; }
+output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+button { font: inherit; font-size: 15px; padding: 10px 14px; border-radius: 8px; border: 1px solid #444b55; background: #2f353d; color: var(--text); }
+button.gold { background: var(--gold); color: #111; border-color: var(--gold); font-weight: 700; }
+button.danger { background: #5a1f1c; border-color: #8a2b25; }
+button.toggle.on { background: var(--gold); color: #111; font-weight: 700; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.center { text-align: center; }
+.meter { flex: 1; height: 14px; background: var(--bg); border-radius: 7px; overflow: hidden; }
+#meterBar { height: 100%; width: 0; background: var(--gold); transition: width .08s linear; }
+.beat { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--muted); }
+.beat.on { background: var(--gold); border-color: var(--gold); }
+.tube { border-top: 1px solid #333a43; padding: 10px 0 6px; }
+.tube:first-child { border-top: 0; }
+.tube .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tube .name { font-weight: 700; flex: 1; min-width: 90px; }
+.tube select { font: inherit; padding: 8px; border-radius: 8px; background: #2f353d; color: var(--text); border: 1px solid #444b55; }
+.tube .state { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.tube .state.ok { color: var(--green); }
+.tube .btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 14px 0 4px; }
+dialog { background: var(--bg); color: var(--text); border: 1px solid #3a414b; border-radius: 12px; width: min(96vw, 620px); padding: 14px; }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog input:not([type]) , dialog input[type=text] { flex: 1; font: inherit; padding: 9px; border-radius: 8px; border: 1px solid #444b55; background: #2f353d; color: var(--text); }
+.job { background: var(--panel); border-radius: 10px; padding: 10px; margin: 10px 0; }
+.job .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.job .head strong { flex: 1; }
+.seg { display: inline-flex; border: 1px solid #444b55; border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 8px 12px; }
+.seg button.on { background: var(--gold); color: #111; font-weight: 700; }
+.swatch { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #555; }
+.hue { background: linear-gradient(90deg, red, yellow, lime, cyan, blue, magenta, red); height: 8px; border-radius: 4px; }
+.doing { color: var(--muted); font-size: 12px; width: 100%; }
