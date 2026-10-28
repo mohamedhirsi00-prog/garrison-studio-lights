@@ -453,7 +453,7 @@ function renderTubes() {
     const row = document.createElement("div"); row.className = "tube";
     const st = tubeState[t.id] || (live(t.id) ? "connected" : "not connected");
     row.innerHTML = `<div class="top"><span class="name"></span><select></select></div>
-      <div class="state ${st === "connected" ? "ok" : ""}"></div>
+      <div class="state ${st === "connected" ? "ok" : /^not connected$/.test(st) ? "" : "warn"}"></div>
       <div class="btns"><button data-a="connect">Connect</button><button data-a="identify">Identify</button><button data-a="rename">Rename</button></div>`;
     row.querySelector(".name").textContent = t.name;
     row.querySelector(".state").textContent = st;
@@ -500,7 +500,7 @@ function openMaker(scene) {
         <label class="row"><span>Strength</span><input type="range" min="0" max="100" data-k="sat"></label></div>
       <div class="cct"><label class="row"><span>Warm ↔ cool</span><input type="range" min="2500" max="10000" step="100" data-k="kelvin"></label></div>
       <div class="bri"><label class="row"><span>Brightness</span><input type="range" min="1" max="100" data-k="bri"></label></div>`;
-    p.querySelectorAll("input[data-k]").forEach((inp) => { inp.value = v[inp.dataset.k]; inp.addEventListener("input", () => { v[inp.dataset.k] = +inp.value; refreshJob(job, p); }); });
+    p.querySelectorAll("input[data-k]").forEach((inp) => { inp.value = v[inp.dataset.k]; paintRange(inp); inp.addEventListener("input", () => { v[inp.dataset.k] = +inp.value; refreshJob(job, p); }); });
     p.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => { v.mode = b.dataset.m; refreshJob(job, p); }));
     box.append(p); refreshJob(job, p, true);
   }
@@ -574,6 +574,11 @@ $("musicBtn").addEventListener("click", async () => {
   if (music) { stopMusic(); b.textContent = "Music mode: OFF"; b.classList.remove("on"); setStatus("Music mode off."); return; }
   if (await startMusic()) { b.textContent = "Music mode: ON"; b.classList.add("on"); setStatus("Music mode: listening through the microphone."); }
 });
+
+// sliders: gold up to the knob, like the laptop program
+function paintRange(el) { el.style.setProperty("--p", `${((el.value - el.min) / (el.max - el.min)) * 100}%`); }
+document.querySelectorAll('input[type=range]').forEach(paintRange);
+document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("input[type=range]")) paintRange(e.target); });
 
 renderScenes(); renderTubes();
 if (bluetoothOk()) {

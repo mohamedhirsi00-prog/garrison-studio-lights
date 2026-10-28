@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#15181c">
+<meta name="theme-color" content="#121418">
 <title>The Garrison Studio Lights</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261028-012052">
+<link rel="stylesheet" href="style.css?v=20261028-013038">
 </head>
 <body>
 <div id="banner" class="banner" hidden></div>
@@ -20,17 +20,20 @@
 </header>
 
 <main>
+  <h3 class="label">Scenes</h3>
   <section id="scenes" class="scenes"></section>
 
+  <h3 class="label">Overall brightness</h3>
   <section class="panel">
     <label class="row">
-      <span>Overall brightness</span>
+      <span>Brightness</span>
       <input id="master" type="range" min="10" max="100" value="100">
       <output id="masterOut">100</output>
     </label>
   </section>
 
   <section class="panel">
+    <h3 class="label">Music mode</h3>
     <div class="row">
       <button id="musicBtn" class="toggle">Music mode: OFF</button>
       <span class="hint">Listens through the phone's microphone</span>
@@ -57,13 +60,13 @@
   </section>
 
   <section class="panel">
-    <h2>Tubes</h2>
+    <h3 class="label">Lights</h3>
     <div id="tubes"></div>
     <p class="hint">Tubes on in app mode, the NEEWER app closed. The first time on this phone, connect each tube once.</p>
   </section>
 
   <section class="actions">
-    <button id="newScene">New scene</button>
+    <button id="newScene" class="strong">+ New scene</button>
     <button id="connectAll" class="gold">⟳ Reconnect</button>
     <button id="disconnectAll">Disconnect</button>
     <button id="addTube">Add tube</button>
@@ -129,7 +132,7 @@
   </form>
 </dialog>
 
-<script src="config.js?v=20261028-012052"></script>
-<script src="app.js?v=20261028-012052"></script>
+<script src="config.js?v=20261028-013038"></script>
+<script src="app.js?v=20261028-013038"></script>
 </body>
 </html>
