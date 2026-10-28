@@ -89,6 +89,7 @@ async function attach(device, id) {
 
 async function connectTube(id) {
   if (!bluetoothOk()) return;
+  held = false;
   const t = tube(id);
   let device;
   try {
@@ -110,7 +111,7 @@ async function connectTube(id) {
 
 // a tube dropped out (out of range, switched off and on): try it again every 3 seconds for about a minute, then put
 // it back on its look
-let reconnecting = false;
+let reconnecting = false, held = false;                // held: Disconnect was tapped, stay off until Reconnect
 const retrying = new Set();
 function forget(id) {                                    // it must be switched on again when it's back
   const s = state[id] || (state[id] = { on: false, look: { ...DARK } });
@@ -122,16 +123,29 @@ async function restore(id) {
   await show(id, s.wasOn ? s.look : null);
 }
 async function onLost(id, device) {
-  if (reconnecting || retrying.has(id) || (links[id] && links[id].device !== device)) return;
+  if (held || reconnecting || retrying.has(id) || (links[id] && links[id].device !== device)) return;
   forget(id); retrying.add(id); setTube(id, "lost the connection: reconnecting…");
   try {
     for (let i = 0; i < 20; i++) {
       await sleep(3000);
-      if (reconnecting || !tube(id)) return;
+      if (held || reconnecting || !tube(id)) return;
       try { await attach(device, id); await restore(id); return; } catch (e) {}
     }
     setTube(id, "not found: switch it on, then tap Reconnect");
   } finally { retrying.delete(id); }
+}
+
+// Disconnect: let go of every tube (each keeps the look it is showing) and stay disconnected, with no reconnecting by
+// itself, until Reconnect (or a tube's Connect) is tapped. Frees the tubes for the laptop or another phone.
+function disconnectAll() {
+  held = true;
+  if (music) { stopMusic(); const b = $("musicBtn"); b.textContent = "Music mode: OFF"; b.classList.remove("on"); }
+  for (const [id, l] of Object.entries(links)) {
+    forget(id);                                          // so Reconnect puts it back as it was
+    try { l.device.gatt.disconnect(); } catch (e) {}
+    delete links[id]; setTube(id, "disconnected: tap Reconnect to connect again");
+  }
+  setStatus("Disconnected. The tubes keep their last look; tap Reconnect when you want them back.");
 }
 
 // Reconnect (and coming back after the phone was locked): drop every Bluetooth link, even ones that still say
@@ -140,7 +154,7 @@ async function onLost(id, device) {
 async function reconnectAll(full = true) {
   if (!bluetoothOk() || reconnecting) return;
   if (!navigator.bluetooth.getDevices) { setStatus("Tap Connect on each tube."); return; }
-  reconnecting = true;
+  reconnecting = true; held = false;
   try {
     setStatus("Reconnecting…");
     const known = await navigator.bluetooth.getDevices();
@@ -547,6 +561,7 @@ $("addTube").addEventListener("click", () => {
 // ---- start ----------------------------------------------------------------------------------------------------------
 $("newScene").addEventListener("click", () => openMaker(null));
 $("connectAll").addEventListener("click", () => reconnectAll(true));
+$("disconnectAll").addEventListener("click", disconnectAll);
 $("master").addEventListener("input", (e) => { $("masterOut").value = e.target.value; master = e.target.value / 100; applyMaster(); });
 $("sens").addEventListener("input", (e) => { $("sensOut").value = e.target.value; });
 $("coloursBtn").addEventListener("click", openColours);
@@ -565,13 +580,13 @@ if (bluetoothOk()) {
   navigator.bluetooth.getAvailability().then((ok) => {
     if (!ok) showBanner("Bluetooth is turned off. Turn on Bluetooth in your phone's settings, then tap Reconnect.");
   }).catch(() => {});
-  navigator.bluetooth.addEventListener?.("availabilitychanged", (e) => { if (e.value) { $("banner").hidden = true; reconnectAll(); } else showBanner("Bluetooth is turned off. Turn it on in your phone's settings."); });
+  navigator.bluetooth.addEventListener?.("availabilitychanged", (e) => { if (e.value) { $("banner").hidden = true; if (!held) reconnectAll(false); } else showBanner("Bluetooth is turned off. Turn it on in your phone's settings."); });
   reconnectAll(false);
   // the phone was locked or the app was in the background for a while: its links and microphone are probably stale
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) hiddenAt = Date.now();
-    else if (hiddenAt && Date.now() - hiddenAt > 20000) { setStatus("Welcome back: reconnecting the lights…"); reconnectAll(true); }
+    else if (hiddenAt && !held && Date.now() - hiddenAt > 20000) { setStatus("Welcome back: reconnecting the lights…"); reconnectAll(true); }
   });
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
