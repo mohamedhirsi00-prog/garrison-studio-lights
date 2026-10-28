@@ -87,9 +87,18 @@ async function attach(device, id) {
   setTube(id, "connected");
 }
 
+function disconnectOne(id) {                            // one light's Disconnect: the others carry on
+  heldLights.add(id);
+  const l = links[id];
+  forget(id);
+  if (l) { try { l.device.gatt.disconnect(); } catch (e) {} delete links[id]; }
+  if (music) delete music.sent[id];
+  setTube(id, "disconnected: tap Connect");
+}
 async function connectTube(id) {
   if (!bluetoothOk()) return;
   held = false;
+  heldLights.delete(id);
   if (window.TGSNative) {                                  // the Android app: straight to the light by its address
     const t = tube(id), d = TGSNative.device(t.mac);
     deviceMap[d.id] = id;
@@ -118,7 +127,8 @@ async function connectTube(id) {
 
 // a tube dropped out (out of range, switched off and on): try it again every 3 seconds for about a minute, then put
 // it back on its look
-let reconnecting = false, held = false;                // held: Disconnect was tapped, stay off until Reconnect
+let reconnecting = false, held = false;
+const heldLights = new Set();                            // lights disconnected one by one: left alone until Connect                // held: Disconnect was tapped, stay off until Reconnect
 const retrying = new Set();
 function forget(id) {                                    // it must be switched on again when it's back
   const s = state[id] || (state[id] = { on: false, look: { ...DARK } });
@@ -130,12 +140,12 @@ async function restore(id) {
   await show(id, s.wasOn ? s.look : null);
 }
 async function onLost(id, device) {
-  if (held || reconnecting || retrying.has(id) || (links[id] && links[id].device !== device)) return;
+  if (held || heldLights.has(id) || reconnecting || retrying.has(id) || (links[id] && links[id].device !== device)) return;
   forget(id); retrying.add(id); setTube(id, "lost the connection: reconnecting…");
   try {
     for (let i = 0; i < 20; i++) {
       await sleep(3000);
-      if (held || reconnecting || !tube(id)) return;
+      if (held || heldLights.has(id) || reconnecting || !tube(id)) return;
       try { await attach(device, id); await restore(id); return; } catch (e) {}
     }
     setTube(id, "not found: switch it on, then tap Reconnect");
@@ -159,8 +169,9 @@ function disconnectAll() {
 // Reconnect (and coming back after the phone was locked): drop every Bluetooth link, even ones that still say
 // connected but no longer reach the tube, connect again, put each tube back on its look, and in Music mode start
 // listening to the microphone again
-async function reconnectAll(full = true) {
+async function reconnectAll(full = true, auto = false) {
   if (full) mixer.reconnect();
+  if (!auto) heldLights.clear();                         // the button brings back lights disconnected one by one
   if (!bluetoothOk() || reconnecting) return;
   if (!navigator.bluetooth.getDevices) { setStatus("Tap Connect on each tube."); return; }
   reconnecting = true; held = false;
@@ -169,7 +180,7 @@ async function reconnectAll(full = true) {
     const known = await navigator.bluetooth.getDevices();
     for (const device of known) {
       const id = deviceMap[device.id];
-      if (!id || !tube(id) || (!full && live(id))) continue;
+      if (!id || !tube(id) || (!full && live(id)) || heldLights.has(id)) continue;
       if (full && links[id]) { forget(id); setTube(id, "reconnecting…"); try { device.gatt.disconnect(); } catch (e) {} }
       try { await attach(device, id); await restore(id); } catch (e) { setTube(id, "not found: tap Connect"); }
     }
@@ -433,7 +444,7 @@ const lookHex = (l, v = 1) => !l ? "#3a3f46" : l.mode === "hsi" ? hsvHex(l.hue, 
 const $ = (id) => document.getElementById(id);
 function setStatus(t) { $("status").textContent = t; }
 const tubeState = {};
-function setTube(id, text) { tubeState[id] = text; renderTubes(); }
+function setTube(id, text) { tubeState[id] = text; renderTubes(); if (typeof countLights === "function" && $("indLights")) countLights(); }
 
 function bluetoothOk() {
   if (!navigator.bluetooth) {
@@ -470,13 +481,13 @@ function renderTubes() {
     const st = tubeState[t.id] || (live(t.id) ? "connected" : "not connected");
     row.innerHTML = `<div class="top"><span class="name"></span><select></select></div>
       <div class="state ${st === "connected" ? "ok" : /^not connected$/.test(st) ? "" : "warn"}"></div>
-      <div class="btns"><button data-a="adjust" class="gold">Adjust</button><button data-a="connect">Connect</button><button data-a="identify">Identify</button><button data-a="rename">Rename</button></div>`;
+      <div class="btns"><button data-a="adjust" class="gold">Adjust</button><button data-a="connect">${live(t.id) ? "Disconnect" : "Connect"}</button><button data-a="identify">Identify</button><button data-a="rename">Rename</button></div>`;
     row.querySelector(".name").textContent = t.name;
     row.querySelector(".state").textContent = st;
     const sel = row.querySelector("select");
     for (const [k, v] of Object.entries(JOBS)) { const o = new Option(v, k, false, t.job === k); sel.append(o); }
     sel.addEventListener("change", () => { t.job = sel.value; saveTubes(); show(t.id, baseLooks[t.job] || null); setStatus(`${t.name} is now: ${JOBS[t.job]}.`); });
-    row.querySelector('[data-a="connect"]').addEventListener("click", () => connectTube(t.id));
+    row.querySelector('[data-a="connect"]').addEventListener("click", () => (live(t.id) ? disconnectOne(t.id) : connectTube(t.id)));
     row.querySelector('[data-a="identify"]').addEventListener("click", () => identify(t.id));
     row.querySelector('[data-a="adjust"]').addEventListener("click", () => openAdjust(t.id));
     row.querySelector('[data-a="rename"]').addEventListener("click", () => {
@@ -866,7 +877,7 @@ if (bluetoothOk()) {
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) hiddenAt = Date.now();
-    else if (hiddenAt && !held && Date.now() - hiddenAt > 20000) { setStatus("Welcome back: reconnecting the lights…"); reconnectAll(true); }
+    else if (hiddenAt && !held && Date.now() - hiddenAt > 20000) { setStatus("Welcome back: reconnecting the lights…"); reconnectAll(true, true); }
   });
 }
 if (!IN_APP && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});   // the app has its files inside it
