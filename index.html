@@ -8,18 +8,41 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261028-070350">
+<link rel="stylesheet" href="style.css?v=20261028-071819">
 </head>
 <body>
 <div id="banner" class="banner" hidden></div>
 
 <header>
   <img src="logo-white.png" alt="The Garrison Studio" class="logo">
-  <h1>The Garrison Studio Lights</h1>
+  <h1 id="appName">The Garrison Studio Lights</h1>
   <p id="status" class="status">Starting…</p>
+  <p class="dots"><span id="indLights" class="dot">Lights: …</span><span id="indMixer" class="dot">Mixer: …</span></p>
+  <nav class="tabs">
+    <button data-tab="moments">Moments</button><button data-tab="lights">Lights</button><button data-tab="sound">Sound</button>
+  </nav>
 </header>
 
 <main>
+<!-- Moments: the lights and the sound together, in one tap -->
+<div id="page-moments" class="page" hidden>
+  <h3 class="label">Moments</h3>
+  <p class="hint">The lights and the sound together, in one tap. Press and hold a Moment to edit or delete it.</p>
+  <section id="moments" class="moments"></section>
+</div>
+
+<!-- Sound: the XR18 -->
+<div id="page-sound" class="page" hidden>
+  <p id="mixerNote" class="note">Looking for the XR18…</p>
+  <h3 class="label">Snapshots</h3>
+  <section id="snapshots" class="snaps"></section>
+  <label class="row check"><input id="askSound" type="checkbox" checked> Ask before changing the sound (snapshots and Moments)</label>
+  <h3 class="label">Channels</h3>
+  <section id="strips" class="panel"></section>
+  <p class="hint">Levels go up to 0 dB from here; EQ, gain and the rest stay in X Air Edit.</p>
+</div>
+
+<div id="page-lights" class="page" hidden>
   <h3 class="label">Scenes</h3>
   <section id="scenes" class="scenes"></section>
 
@@ -62,17 +85,48 @@
   <section class="panel">
     <h3 class="label">Lights</h3>
     <div id="tubes"></div>
-    <p class="hint">Tubes on in app mode, the NEEWER app closed. The first time on this phone, connect each tube once.</p>
+    <p id="lightsHint" class="hint">Tubes on in app mode, the NEEWER app closed. The first time on this phone, connect each tube once.</p>
   </section>
+</div>
 
   <section class="actions">
-    <button id="newScene" class="strong">+ New scene</button>
+    <button id="newMoment" class="strong" data-for="moments">+ New Moment</button>
+    <button id="newScene" class="strong" data-for="lights">+ New scene</button>
     <button id="connectAll" class="gold">⟳ Reconnect</button>
     <button id="disconnectAll">Disconnect</button>
-    <button id="addTube">Add tube</button>
+    <button id="findLights" data-for="lights" hidden>Find new lights</button>
+    <button id="addTube" data-for="lights">Add tube</button>
   </section>
-  <p class="hint center">Press and hold a scene to edit or delete it. Lights not responding? Tap Reconnect: it reconnects every tube and, in Music mode, the microphone. Disconnect lets go of them until you tap Reconnect.</p>
+  <p class="hint center">Press and hold a scene or a Moment to edit or delete it. Not responding? Tap Reconnect: the lights, the mixer and, in Music mode, the microphone. Disconnect lets go of them until you tap Reconnect.</p>
 </main>
+
+<!-- a Moment: the lights and the sound in one tap -->
+<dialog id="momentDialog">
+  <form method="dialog">
+    <h2>Moment</h2>
+    <p class="hint">A Moment changes the lights and the sound in one tap.</p>
+    <label class="row"><span>Name</span><input id="momentName" maxlength="24"></label>
+    <label class="row"><span>Lights</span><select id="momentScene"></select></label>
+    <label class="row"><span>Sound</span><select id="momentSnap"></select></label>
+    <h3 class="label">Then the channels</h3>
+    <div id="momentChans"></div>
+    <div class="row end">
+      <button value="close" formnovalidate>Close</button>
+      <button type="button" id="saveMoment" class="gold">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="momentMenu">
+  <form method="dialog">
+    <h2 id="momentMenuTitle"></h2>
+    <div class="row end">
+      <button value="edit" class="gold">Edit</button>
+      <button value="delete" class="danger">Delete</button>
+      <button value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- scene maker -->
 <dialog id="maker">
@@ -146,7 +200,9 @@
   </form>
 </dialog>
 
-<script src="config.js?v=20261028-070350"></script>
-<script src="app.js?v=20261028-070350"></script>
+<script src="native.js?v=20261028-071819"></script>
+<script src="mixer.js?v=20261028-071819"></script>
+<script src="config.js?v=20261028-071819"></script>
+<script src="app.js?v=20261028-071819"></script>
 </body>
 </html>

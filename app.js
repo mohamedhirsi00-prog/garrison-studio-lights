@@ -90,6 +90,13 @@ async function attach(device, id) {
 async function connectTube(id) {
   if (!bluetoothOk()) return;
   held = false;
+  if (window.TGSNative) {                                  // the Android app: straight to the light by its address
+    const t = tube(id), d = TGSNative.device(t.mac);
+    deviceMap[d.id] = id;
+    try { setStatus(`Connecting to ${t.name}…`); await attach(d, id); if (baseLooks[t.job] !== undefined) show(id, baseLooks[t.job]); setStatus(`${t.name} connected.`); }
+    catch (e) { setTube(id, "not found (switched on? in range? NEEWER app closed?)"); setStatus(""); }
+    return;
+  }
   const t = tube(id);
   let device;
   try {
@@ -139,6 +146,7 @@ async function onLost(id, device) {
 // itself, until Reconnect (or a tube's Connect) is tapped. Frees the tubes for the laptop or another phone.
 function disconnectAll() {
   held = true;
+  mixer.disconnect();
   if (music) { stopMusic(); const b = $("musicBtn"); b.textContent = "Music mode: OFF"; b.classList.remove("on"); }
   for (const [id, l] of Object.entries(links)) {
     forget(id);                                          // so Reconnect puts it back as it was
@@ -152,6 +160,7 @@ function disconnectAll() {
 // connected but no longer reach the tube, connect again, put each tube back on its look, and in Music mode start
 // listening to the microphone again
 async function reconnectAll(full = true) {
+  if (full) mixer.reconnect();
   if (!bluetoothOk() || reconnecting) return;
   if (!navigator.bluetooth.getDevices) { setStatus("Tap Connect on each tube."); return; }
   reconnecting = true; held = false;
@@ -179,7 +188,9 @@ async function show(id, look) {
   state[id] = { on: true, look: { ...look } };
 }
 
+let fadeGen = 0;                                        // a scene tapped while another fades takes over from where it is
 async function fadeTo(scene) {
+  const gen = ++fadeGen;
   fading = true;
   try {
     baseLooks = structuredClone(scene.looks);
@@ -191,6 +202,7 @@ async function fadeTo(scene) {
     }
     const start = Object.fromEntries(ids.map((id) => [id, (state[id] && state[id].look) || { ...DARK }]));
     for (let i = 1; i <= FADE_STEPS; i++) {
+      if (gen !== fadeGen) return;                         // a newer scene took over
       const p = i / FADE_STEPS;
       for (const id of ids) {
         const old = start[id], neu = target[id] || { ...old, bri: 0 };
@@ -203,16 +215,18 @@ async function fadeTo(scene) {
           } else mix.kelvin = old.kelvin + (neu.kelvin - old.kelvin) * p;
         } else mix = p <= 0.5 ? { ...old, bri: old.bri * (1 - 2 * p) } : { ...neu, bri: neu.bri * (2 * p - 1) };
         write(id, lookCmd(id, mix));
+        if (state[id]) state[id].look = { ...mix };       // where it is now, if a newer scene takes over
       }
       await sleep(FADE_MS / FADE_STEPS);
     }
+    if (gen !== fadeGen) return;
     for (const id of ids) {
       const neu = target[id];
       if (!neu || neu.bri <= 0) { await writeNow(id, cmdPower(tube(id), false)); state[id] = { on: false, look: { ...DARK } }; }
       else { await write(id, lookCmd(id, neu)); state[id] = { on: true, look: { ...neu } }; }
     }
     setStatus(`Scene: ${scene.name}`);
-  } finally { fading = false; }
+  } finally { if (gen === fadeGen) fading = false; }
 }
 
 async function identify(id) {
@@ -446,6 +460,7 @@ function renderScenes() {
     b.addEventListener("click", () => { if (!held) fadeTo(sc); });
     box.append(b);
   });
+  if (typeof renderMoments === "function" && $("moments")) renderMoments();
 }
 
 function renderTubes() {
@@ -628,6 +643,195 @@ $("addTube").addEventListener("click", () => {
   d.showModal();
 });
 
+// ---- tabs: Moments, Lights, Sound (the same as the laptop's The Garrison Studio Control) ------------------------
+const IN_APP = !!window.TGSNative;
+function showTab(key) {
+  if (!["moments", "lights", "sound"].includes(key)) key = "moments";
+  for (const k of ["moments", "lights", "sound"]) $("page-" + k).hidden = k !== key;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === key));
+  document.querySelectorAll("[data-for]").forEach((b) => { b.hidden = b.dataset.for !== key || (b.id === "findLights" && !IN_APP) || (b.id === "addTube" && IN_APP); });
+  store.set("tab", key);
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+function countLights() {
+  const n = tubes.filter((t) => live(t.id)).length, el = $("indLights");
+  el.textContent = `Lights: ${n} of ${tubes.length} connected`;
+  el.className = "dot " + (tubes.length && n === tubes.length ? "ok" : "warn");
+}
+setInterval(countLights, 1000);
+
+// ---- Moments: one tap sets the lights scene, the XR18 snapshot, then mutes or unmutes channels ------------------
+const CHANNEL_CHOICES = { keep: "Leave as it is", on: "On", mute: "Muted" };
+let moments = store.get("moments", null) || structuredClone(window.TGS_CONFIG.moments || []);
+const saveMoments = () => store.set("moments", moments);
+let activeMoment = null, momentJob = null, momentAt = 0, momentOriginal = null;
+function describeMoment(m) {
+  const parts = [], names = Object.fromEntries(STRIPS.map((s) => [s[0], s[1]])), ch = m.channels || {};
+  if (m.scene) parts.push(`lights: ${m.scene}`);
+  if (m.snapshot) parts.push(`sound: ${SNAPSHOTS[m.snapshot - 1][1]}`);
+  const mutes = Object.keys(ch).filter((k) => ch[k] === "mute" && names[k]).map((k) => names[k]);
+  const ons = Object.keys(ch).filter((k) => ch[k] === "on" && names[k]).map((k) => names[k]);
+  if (mutes.length) parts.push("mute " + mutes.join(", "));
+  if (ons.length) parts.push(ons.join(", ") + " on");
+  return parts.join(" · ") || "does nothing yet: press and hold to edit";
+}
+function renderMoments() {
+  const box = $("moments"); box.innerHTML = "";
+  const colours = Object.fromEntries(scenes.map((s) => [s.name, s.button]));
+  for (const m of moments) {
+    const card = document.createElement("div"); card.className = "moment" + (m.name === activeMoment ? " on" : "");
+    const b = document.createElement("button"); b.textContent = m.name; b.style.background = colours[m.scene] || "#3a4250";
+    const p = document.createElement("p"); p.textContent = describeMoment(m);
+    let timer = null, held2 = false;
+    b.addEventListener("pointerdown", () => { held2 = false; timer = setTimeout(() => { held2 = true; momentMenu(m); }, 600); });
+    ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, () => clearTimeout(timer)));
+    b.addEventListener("contextmenu", (e) => e.preventDefault());
+    b.addEventListener("click", () => { if (!held2) runMoment(m); });
+    card.append(b, p); box.append(card);
+  }
+}
+function runMoment(m) {
+  const chans = Object.fromEntries(Object.entries(m.channels || {}).filter(([, v]) => v === "on" || v === "mute"));
+  const sound = !!(m.snapshot || Object.keys(chans).length);
+  if (sound && mixer.connected && $("askSound").checked && !confirm(`${m.name}\n\n${describeMoment(m)}\n\nChange the sound now?`)) return;
+  const sc = scenes.find((s) => s.name === m.scene);
+  if (sc) fadeTo(sc).then(() => { if (activeMoment === m.name) setStatus(`Moment: ${m.name}.`); });   // its own message stays
+  if (sound && !mixer.connected) setStatus(`${m.name}: lights changed. The mixer isn't connected, so the sound didn't change.`);
+  else {
+    if (momentJob) { clearTimeout(momentJob); momentJob = null; }   // a Moment tapped just before: drop its mutes
+    if (m.snapshot) mixer.loadSnapshot(m.snapshot);
+    if (Object.keys(chans).length) momentJob = setTimeout(() => { momentJob = null; for (const [k, v] of Object.entries(chans)) mixer.setOn(k, v === "on"); }, m.snapshot ? 2600 : 0);
+    setStatus(`Moment: ${m.name}.`);
+  }
+  activeMoment = m.name; momentAt = Date.now(); renderMoments();
+}
+function momentMenu(m) {
+  const d = $("momentMenu"); $("momentMenuTitle").textContent = m.name;
+  d.onclose = () => {
+    if (d.returnValue === "edit") openMoment(m);
+    if (d.returnValue === "delete" && confirm(`Delete the Moment “${m.name}”?`)) { moments = moments.filter((x) => x !== m); saveMoments(); renderMoments(); }
+  };
+  d.showModal();
+}
+function openMoment(m) {
+  momentOriginal = m ? m.name : null;
+  m = m || { name: "", scene: null, snapshot: null, channels: {} };
+  $("momentName").value = m.name;
+  const sc = $("momentScene"); sc.innerHTML = "";
+  sc.append(new Option("Leave the lights as they are", ""));
+  for (const s of scenes) sc.append(new Option(s.name, s.name, false, s.name === m.scene));
+  const sn = $("momentSnap"); sn.innerHTML = "";
+  sn.append(new Option("Leave the sound as it is", ""));
+  for (const [n, name] of SNAPSHOTS) sn.append(new Option(`${n}. ${name}`, n, false, n === m.snapshot));
+  const ch = $("momentChans"); ch.innerHTML = "";
+  for (const [key, name] of STRIPS.filter((s) => s[0] !== "main")) {
+    const row = document.createElement("label"); row.className = "row";
+    const l = document.createElement("span"); l.textContent = name;
+    const sel = document.createElement("select"); sel.dataset.key = key;
+    for (const [k, v] of Object.entries(CHANNEL_CHOICES)) sel.append(new Option(v, k, false, ((m.channels || {})[key] || "keep") === k));
+    row.append(l, sel); ch.append(row);
+  }
+  $("momentDialog").showModal();
+}
+$("saveMoment").addEventListener("click", () => {
+  const name = $("momentName").value.trim();
+  if (!name) { alert("Give the Moment a name first."); return; }
+  const channels = {};
+  $("momentChans").querySelectorAll("select").forEach((s) => { if (s.value !== "keep") channels[s.dataset.key] = s.value; });
+  const m = { name, scene: $("momentScene").value || null, snapshot: +$("momentSnap").value || null, channels };
+  const i = moments.findIndex((x) => x.name === name), j = moments.findIndex((x) => x.name === momentOriginal);
+  if (i >= 0) { if (name !== momentOriginal && !confirm(`There is already a Moment called “${name}”. Replace it?`)) return; moments[i] = m; }
+  else if (j >= 0) moments[j] = m;                         // renamed
+  else moments.push(m);
+  saveMoments(); renderMoments(); $("momentDialog").close(); setStatus(`Saved the Moment “${name}”.`);
+});
+$("newMoment").addEventListener("click", () => openMoment(null));
+
+// ---- Sound: the XR18 snapshots, mutes, levels (to 0 dB) and meters -----------------------------------------------
+const strip = {};
+function soundOk(what) {
+  if (!mixer.connected) { setStatus(IN_APP ? "The mixer isn't connected: see the Sound tab." : "The mixer needs the Android app."); return false; }
+  return !$("askSound").checked || confirm(`${what}\n\nChange the sound now?`);
+}
+function buildSound() {
+  const sb = $("snapshots"); sb.innerHTML = "";
+  for (const [n, name, desc] of SNAPSHOTS) {
+    const card = document.createElement("div"); card.className = "snap"; card.dataset.n = n;
+    const b = document.createElement("button"); b.textContent = `${n}  ${name}`;
+    b.addEventListener("click", () => { if (soundOk(`Load snapshot ${n}: ${name}? Every level and mute changes to what it saved.`)) { mixer.loadSnapshot(n); setStatus(`Snapshot ${n}: ${name}.`); } });
+    const p = document.createElement("p"); p.textContent = desc;
+    card.append(b, p); sb.append(card);
+  }
+  const box = $("strips"); box.innerHTML = "";
+  for (const [key, name] of STRIPS) {
+    const row = document.createElement("div"); row.className = "strip" + (key === "main" ? " main" : "");
+    row.innerHTML = `<div class="top"><span class="nm"></span><button class="mute">Mute</button></div>
+      <div class="lv"><input type="range" min="0" max="750" value="0"><output>off</output></div><div class="vu"><div></div></div>`;
+    row.querySelector(".nm").textContent = name;
+    const st = strip[key] = { row, name: row.querySelector(".nm"), mute: row.querySelector(".mute"), level: row.querySelector("input"),
+                              out: row.querySelector("output"), bar: row.querySelector(".vu div"), on: 1, touched: 0, pending: null };
+    st.mute.addEventListener("click", () => { if (!mixer.connected) { soundOk(""); return; } mixer.setOn(key, !st.on); });
+    st.level.addEventListener("input", () => {
+      st.touched = Date.now(); st.out.value = dbText(st.level.value / 1000);
+      if (!st.pending) st.pending = setTimeout(() => { st.pending = null; mixer.setLevel(key, st.level.value / 1000); }, 40);
+    });
+    box.append(row); paintRange(st.level);
+  }
+  $("askSound").checked = store.get("askSound", true);
+  $("askSound").addEventListener("change", () => store.set("askSound", $("askSound").checked));
+}
+const pathKey = {};
+for (const [key, , path] of STRIPS) { pathKey[path + "/mix/fader"] = [key, "fader"]; pathKey[path + "/mix/on"] = [key, "on"]; pathKey[path + "/config/name"] = [key, "name"]; }
+mixer.on((kind, a, b) => {
+  if (kind === "state") {
+    $("indMixer").textContent = `Mixer: ${a ? b : "not connected"}`; $("indMixer").className = "dot " + (a ? "ok" : "warn");
+    $("mixerNote").hidden = a;
+    $("mixerNote").textContent = IN_APP ? `${b}. The phone must be on the mixer's Wi-Fi (XR18-66-3C-B0) at venues, or on the same Wi-Fi as the mixer at the studio. It connects by itself.`
+                                        : "The mixer can only be controlled from the Android app (The Garrison Studio Control). This web page does the lights and Moments' lights.";
+  } else if (kind === "value") {
+    if (a === "/-snap/index") document.querySelectorAll(".snap").forEach((c) => c.classList.toggle("on", +c.dataset.n === b));
+    else if (pathKey[a]) {
+      const [key, what] = pathKey[a], st = strip[key];
+      if (what === "fader" && Date.now() - st.touched > 800) { st.level.value = Math.round(b * 1000); st.out.value = dbText(b); paintRange(st.level); }
+      else if (what === "on") { st.on = b; st.mute.textContent = b ? "Mute" : "Muted"; st.mute.classList.toggle("muted", !b); }
+      else if (what === "name") {
+        st.name.textContent = STRIPS.find((s) => s[0] === key)[1];
+        const small = document.createElement("small"); small.textContent = b ? `(${b})` : ""; st.name.append(small);
+      }
+    }
+  } else if (kind === "meters") {
+    for (const [key, , , idx] of STRIPS) {
+      const db = Math.max(...idx.filter((i) => i < a.length).map((i) => a[i]), -90), f = Math.min(1, Math.max(0, (db + 60) / 60));
+      strip[key].bar.style.width = `${Math.round(f * 100)}%`;
+      strip[key].bar.style.background = db > -6 ? "var(--red)" : db > -18 ? "var(--amber)" : "var(--green)";
+    }
+  }
+});
+
+// ---- Find new lights (the Android app): the HB80C is recognised by its model code, like on the laptop ----------
+const MODELS = { "20230108": { name: "HB80C", job: "face", kelvin: [2500, 7500] } };
+$("findLights").addEventListener("click", async () => {
+  if (!IN_APP) return;
+  setStatus("Looking for Neewer lights for 10 seconds… (on, in app mode, the NEEWER app closed)");
+  let found;
+  try { found = await TGSNative.scan(10); } catch (e) { setStatus("Couldn't look for lights: is Bluetooth on?"); return; }
+  const known = new Set(tubes.map((t) => t.mac.toUpperCase()));
+  const fresh = found.filter((f) => !known.has(f.address.toUpperCase()));
+  if (!fresh.length) { setStatus("No new lights found. Is it switched on in app mode, and the NEEWER app closed?"); return; }
+  for (const f of fresh) {
+    const model = MODELS[(f.name || "").slice(3).split("&")[0]] || {};
+    const used = new Set(tubes.map((t) => t.job));
+    const job = model.job || ["stage_left", "stage_right", "face"].find((j) => !used.has(j)) || "stage_left";
+    let n = 1; while (tubes.some((t) => t.id === `t${n}`)) n++;
+    let name = model.name || `Tube ${String.fromCharCode(64 + n)}`, i = 2;
+    while (tubes.some((t) => t.name === name)) name = `${model.name || "Light"} ${i++}`;
+    tubes.push(Object.assign({ id: `t${n}`, name, mac: f.address.toUpperCase(), job }, model.kelvin ? { kelvin: model.kelvin } : {}));
+    setStatus(`Found a new light: ${name}, job ${JOBS[job]}. Tap Identify to check.`);
+  }
+  saveTubes(); renderTubes(); reconnectAll(false);
+});
+
 // ---- start ----------------------------------------------------------------------------------------------------------
 $("newScene").addEventListener("click", () => openMaker(null));
 $("connectAll").addEventListener("click", () => reconnectAll(true));
@@ -650,7 +854,8 @@ function paintRange(el) { el.style.setProperty("--p", `${((el.value - el.min) / 
 document.querySelectorAll('input[type=range]').forEach(paintRange);
 document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("input[type=range]")) paintRange(e.target); });
 
-renderScenes(); renderTubes();
+if (IN_APP) { $("appName").textContent = "The Garrison Studio Control"; document.title = "The Garrison Studio Control"; $("lightsHint").textContent = "Lights on in app mode, the NEEWER app closed. They connect by themselves; Find new lights adds one."; }
+renderScenes(); renderTubes(); renderMoments(); buildSound(); mixer.start(); showTab(store.get("tab", "moments"));
 if (bluetoothOk()) {
   navigator.bluetooth.getAvailability().then((ok) => {
     if (!ok) showBanner("Bluetooth is turned off. Turn on Bluetooth in your phone's settings, then tap Reconnect.");
@@ -664,4 +869,4 @@ if (bluetoothOk()) {
     else if (hiddenAt && !held && Date.now() - hiddenAt > 20000) { setStatus("Welcome back: reconnecting the lights…"); reconnectAll(true); }
   });
 }
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if (!IN_APP && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});   // the app has its files inside it
