@@ -2,6 +2,10 @@
 
 One-tap lighting scenes for The Garrison Studio's Neewer TL60 RGB tubes, from an Android phone, over Bluetooth.
 
+**The full app is the Android app, TGS Control** (The Garrison Studio Control): the same Moments, Lights and Sound tabs
+as the laptop, including the XR18 mixer. Install `The Garrison Studio Control.apk` from the Neewer TL60 Lights folder
+on OneDrive. This web page is the lights only (a web page can't talk to the mixer).
+
 Open **https://mohamedhirsi00-prog.github.io/garrison-studio-lights/** in **Chrome on Android**, then
 Chrome menu → **Add to Home screen**.
 
