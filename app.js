@@ -81,7 +81,7 @@ async function attach(device, id) {
   const char = await svc.getCharacteristic(WRITE);
   links[id] = { device, char, busy: false, next: null };
   if (!device._tgsListening) {
-    device.addEventListener("gattserverdisconnected", () => { const k = deviceMap[device.id]; if (k) setTube(k, "disconnected: tap Reconnect"); });
+    device.addEventListener("gattserverdisconnected", () => { const k = deviceMap[device.id]; if (k) onLost(k, device); });
     device._tgsListening = true;
   }
   setTube(id, "connected");
@@ -108,17 +108,51 @@ async function connectTube(id) {
   } catch (e) { setTube(id, "couldn't connect (on? in range? phone app closed?)"); setStatus(""); }
 }
 
-async function reconnectAll() {
-  if (!bluetoothOk()) return;
+// a tube dropped out (out of range, switched off and on): try it again every 3 seconds for about a minute, then put
+// it back on its look
+let reconnecting = false;
+const retrying = new Set();
+function forget(id) {                                    // it must be switched on again when it's back
+  const s = state[id] || (state[id] = { on: false, look: { ...DARK } });
+  s.wasOn = s.on; s.on = false;
+}
+async function restore(id) {
+  if (music) { delete music.sent[id]; return; }          // Music mode puts it back by itself
+  const s = state[id] || {};
+  await show(id, s.wasOn ? s.look : null);
+}
+async function onLost(id, device) {
+  if (reconnecting || retrying.has(id) || (links[id] && links[id].device !== device)) return;
+  forget(id); retrying.add(id); setTube(id, "lost the connection: reconnecting…");
+  try {
+    for (let i = 0; i < 20; i++) {
+      await sleep(3000);
+      if (reconnecting || !tube(id)) return;
+      try { await attach(device, id); await restore(id); return; } catch (e) {}
+    }
+    setTube(id, "not found: switch it on, then tap Reconnect");
+  } finally { retrying.delete(id); }
+}
+
+// Reconnect (and coming back after the phone was locked): drop every Bluetooth link, even ones that still say
+// connected but no longer reach the tube, connect again, put each tube back on its look, and in Music mode start
+// listening to the microphone again
+async function reconnectAll(full = true) {
+  if (!bluetoothOk() || reconnecting) return;
   if (!navigator.bluetooth.getDevices) { setStatus("Tap Connect on each tube."); return; }
-  setStatus("Reconnecting…");
-  const known = await navigator.bluetooth.getDevices();
-  for (const device of known) {
-    const id = deviceMap[device.id];
-    if (!id || !tube(id) || live(id)) continue;
-    try { await attach(device, id); } catch (e) { setTube(id, "not found: tap Connect"); }
-  }
-  setStatus("Ready.");
+  reconnecting = true;
+  try {
+    setStatus("Reconnecting…");
+    const known = await navigator.bluetooth.getDevices();
+    for (const device of known) {
+      const id = deviceMap[device.id];
+      if (!id || !tube(id) || (!full && live(id))) continue;
+      if (full && links[id]) { forget(id); setTube(id, "reconnecting…"); try { device.gatt.disconnect(); } catch (e) {} }
+      try { await attach(device, id); await restore(id); } catch (e) { setTube(id, "not found: tap Connect"); }
+    }
+    if (full && music) { micRestarts = 0; await restartMusic(); }
+    setStatus(full ? "Reconnected." + (music ? " Music mode is listening again." : "") : "Ready.");
+  } finally { reconnecting = false; }
 }
 
 // ---- looks --------------------------------------------------------------------------------------------------
@@ -179,7 +213,7 @@ function applyMaster() { for (const [id, s] of Object.entries(state)) if (s.on) 
 
 // ---- Music mode: the phone's microphone; level against the last few seconds (works at any volume), a pulse on
 // strong low-end beats (40-180 Hz energy jumping above its average); stage tubes only, about 12 updates a second --
-let music = null;
+let music = null, micRestarts = 0;
 const STYLE_HINTS = {
   "Beat colours": "every beat jumps the stage tubes to the next colour",
   "Beat flash": "every beat flashes the stage tubes bright, then they drop",
@@ -290,10 +324,18 @@ async function startMusic() {
   const binHz = ctx.sampleRate / an.fftSize, lo = Math.floor(40 / binHz), hi = Math.ceil(180 / binHz);
   let ref = 1e-4, env = 0, lowAvg = 1e-6, pulse = 0, t0 = performance.now(), lastBeat = 0, beats = 0, kicked = 0, wave = 0;
   const sent = {};
+  let lastRms = -1, sameFor = 0;
   const tick = () => {
+    if (ctx.state === "suspended" || ctx.state === "interrupted") ctx.resume().catch(() => {});
     an.getFloatTimeDomainData(td);
     let sum = 0; for (const v of td) sum += v * v;
     const rms = Math.sqrt(sum / td.length);
+    // the microphone stopped (the phone was locked, or another app took it): exactly the same reading for 5 seconds
+    sameFor = rms === lastRms ? sameFor + 1 : 0; lastRms = rms;
+    if (sameFor === 0 && beats) micRestarts = 0;                     // it's working
+    if ((sameFor > 60 || stream.getAudioTracks().every((t) => t.readyState === "ended")) && !music.restarting && micRestarts < 3) {
+      micRestarts++; setStatus("Music mode: the microphone stopped, listening again…"); restartMusic(); return;
+    }
     ref = Math.max(rms, ref * 0.992, 1e-4);
     const sens = document.getElementById("sens").value / 100;
     const target = Math.min(1, Math.pow(rms / ref, 0.8) * sens);
@@ -323,8 +365,17 @@ async function startMusic() {
       }
     }
   };
-  music = { stream, ctx, timer: setInterval(tick, 83) };
+  music = { stream, ctx, sent, timer: setInterval(tick, 83) };
   return true;
+}
+async function restartMusic() {                          // listen to the microphone again (keeps the tubes as they are)
+  if (!music || music.restarting) return;
+  music.restarting = true;
+  clearInterval(music.timer); music.stream.getTracks().forEach((t) => t.stop()); music.ctx.close().catch(() => {});
+  music = null;
+  if (!(await startMusic())) {
+    const b = $("musicBtn"); b.textContent = "Music mode: OFF"; b.classList.remove("on");
+  }
 }
 function stopMusic() {
   if (!music) return;
@@ -495,7 +546,7 @@ $("addTube").addEventListener("click", () => {
 
 // ---- start ----------------------------------------------------------------------------------------------------------
 $("newScene").addEventListener("click", () => openMaker(null));
-$("connectAll").addEventListener("click", reconnectAll);
+$("connectAll").addEventListener("click", () => reconnectAll(true));
 $("master").addEventListener("input", (e) => { $("masterOut").value = e.target.value; master = e.target.value / 100; applyMaster(); });
 $("sens").addEventListener("input", (e) => { $("sensOut").value = e.target.value; });
 $("coloursBtn").addEventListener("click", openColours);
@@ -515,6 +566,12 @@ if (bluetoothOk()) {
     if (!ok) showBanner("Bluetooth is turned off. Turn on Bluetooth in your phone's settings, then tap Reconnect.");
   }).catch(() => {});
   navigator.bluetooth.addEventListener?.("availabilitychanged", (e) => { if (e.value) { $("banner").hidden = true; reconnectAll(); } else showBanner("Bluetooth is turned off. Turn it on in your phone's settings."); });
-  reconnectAll();
+  reconnectAll(false);
+  // the phone was locked or the app was in the background for a while: its links and microphone are probably stale
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else if (hiddenAt && Date.now() - hiddenAt > 20000) { setStatus("Welcome back: reconnecting the lights…"); reconnectAll(true); }
+  });
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
