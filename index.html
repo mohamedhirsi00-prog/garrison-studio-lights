@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261028-013038">
+<link rel="stylesheet" href="style.css?v=20261028-070350">
 </head>
 <body>
 <div id="banner" class="banner" hidden></div>
@@ -118,6 +118,20 @@
   </form>
 </dialog>
 
+<!-- one light's own look, live -->
+<dialog id="adjustDialog">
+  <form method="dialog">
+    <div class="row"><h2 id="adjustTitle" style="flex:1;margin:0"></h2><span id="adjustSwatch" class="swatch"></span></div>
+    <div id="adjustPanel" class="job"></div>
+    <h3 class="label">Quick looks</h3>
+    <div id="quickLooks" class="quick"></div>
+    <div class="row end wrap">
+      <button type="button" id="adjustSave">Save all lights as a scene…</button>
+      <button value="close" class="gold">Close</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- add a tube by its Bluetooth address (shown by the laptop program) -->
 <dialog id="addDialog">
   <form method="dialog">
@@ -132,7 +146,7 @@
   </form>
 </dialog>
 
-<script src="config.js?v=20261028-013038"></script>
-<script src="app.js?v=20261028-013038"></script>
+<script src="config.js?v=20261028-070350"></script>
+<script src="app.js?v=20261028-070350"></script>
 </body>
 </html>

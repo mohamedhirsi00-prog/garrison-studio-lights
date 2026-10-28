@@ -184,7 +184,8 @@ async function fadeTo(scene) {
   try {
     baseLooks = structuredClone(scene.looks);
     const ids = tubes.filter((t) => live(t.id)).map((t) => t.id);
-    const target = Object.fromEntries(ids.map((id) => [id, scene.looks[tube(id).job] || null]));
+    const own = scene.lights || {};                     // saved light by light (Adjust → Save all lights as a scene)
+    const target = Object.fromEntries(ids.map((id) => [id, tube(id).mac in own ? own[tube(id).mac] : (scene.looks[tube(id).job] || null)]));
     for (const id of ids) if (target[id] && target[id].bri > 0 && !(state[id] && state[id].on)) {
       await writeNow(id, cmdPower(tube(id), true)); state[id] = { on: true, look: { ...DARK } };
     }
@@ -454,7 +455,7 @@ function renderTubes() {
     const st = tubeState[t.id] || (live(t.id) ? "connected" : "not connected");
     row.innerHTML = `<div class="top"><span class="name"></span><select></select></div>
       <div class="state ${st === "connected" ? "ok" : /^not connected$/.test(st) ? "" : "warn"}"></div>
-      <div class="btns"><button data-a="connect">Connect</button><button data-a="identify">Identify</button><button data-a="rename">Rename</button></div>`;
+      <div class="btns"><button data-a="adjust" class="gold">Adjust</button><button data-a="connect">Connect</button><button data-a="identify">Identify</button><button data-a="rename">Rename</button></div>`;
     row.querySelector(".name").textContent = t.name;
     row.querySelector(".state").textContent = st;
     const sel = row.querySelector("select");
@@ -462,6 +463,7 @@ function renderTubes() {
     sel.addEventListener("change", () => { t.job = sel.value; saveTubes(); show(t.id, baseLooks[t.job] || null); setStatus(`${t.name} is now: ${JOBS[t.job]}.`); });
     row.querySelector('[data-a="connect"]').addEventListener("click", () => connectTube(t.id));
     row.querySelector('[data-a="identify"]').addEventListener("click", () => identify(t.id));
+    row.querySelector('[data-a="adjust"]').addEventListener("click", () => openAdjust(t.id));
     row.querySelector('[data-a="rename"]').addEventListener("click", () => {
       const n = prompt("New name for this tube (e.g. Tube 1, Left, Lectern):", t.name);
       if (n && n.trim()) { t.name = n.trim(); saveTubes(); renderTubes(); }
@@ -540,6 +542,74 @@ $("saveScene").addEventListener("click", () => {
     scenes.splice(off >= 0 ? off : scenes.length, 0, scene);
   }
   makerOriginal = name; saveScenes(); renderScenes(); setStatus(`Saved the scene “${name}”.`);
+});
+
+// ---- Adjust: one light's own look, live, for matching what a podcaster asks for ---------------------------------
+const QUICK_LOOKS = [["Warm white", { mode: "cct", kelvin: 3200 }], ["Neutral", { mode: "cct", kelvin: 4300 }],
+  ["Daylight", { mode: "cct", kelvin: 5600 }], ["Red", { mode: "hsi", hue: 0, sat: 100 }], ["Orange", { mode: "hsi", hue: 25, sat: 100 }],
+  ["Gold", { mode: "hsi", hue: 40, sat: 85 }], ["Green", { mode: "hsi", hue: 130, sat: 90 }], ["Teal", { mode: "hsi", hue: 175, sat: 90 }],
+  ["Blue", { mode: "hsi", hue: 220, sat: 100 }], ["Purple", { mode: "hsi", hue: 275, sat: 90 }], ["Pink", { mode: "hsi", hue: 320, sat: 70 }]];
+let adjustId = null, adjustVars = null;
+function openAdjust(id) {
+  const t = tube(id), s = state[id], l = s && s.on ? s.look : null, [lo, hi] = t.kelvin || [2500, 10000];
+  adjustId = id;
+  adjustVars = { mode: l ? l.mode : "off", hue: l && l.hue !== undefined ? Math.round(l.hue) : 30, sat: l && l.sat !== undefined ? Math.round(l.sat) : 90,
+                 kelvin: Math.min(hi, Math.max(lo, l && l.kelvin ? Math.round(l.kelvin) : 4300)), bri: l ? Math.round(l.bri) : 50 };
+  $("adjustTitle").textContent = `${t.name} · ${JOBS[t.job] || ""}`;
+  const p = $("adjustPanel");
+  p.innerHTML = `<div class="head"><span class="seg">
+      <button type="button" data-m="hsi">Colour</button><button type="button" data-m="cct">White</button><button type="button" data-m="off">Off</button></span></div>
+    <div class="hsi"><label class="row"><span>Colour</span><input type="range" min="0" max="359" data-k="hue"></label><div class="hue"></div>
+      <label class="row"><span>Strength</span><input type="range" min="0" max="100" data-k="sat"></label></div>
+    <div class="cct"><label class="row"><span>Warm ↔ cool</span><input type="range" min="${lo}" max="${hi}" step="100" data-k="kelvin"></label><div class="kelvin"></div></div>
+    <div class="bri"><label class="row"><span>Brightness</span><input type="range" min="1" max="100" data-k="bri"></label></div>`;
+  p.querySelectorAll("input[data-k]").forEach((inp) => {
+    inp.value = adjustVars[inp.dataset.k]; paintRange(inp);
+    inp.addEventListener("input", () => { adjustVars[inp.dataset.k] = +inp.value; refreshAdjust(); });
+  });
+  p.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => { adjustVars.mode = b.dataset.m; refreshAdjust(); }));
+  const q = $("quickLooks"); q.innerHTML = "";
+  for (const [name, ql] of QUICK_LOOKS) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = name;
+    b.style.background = ql.mode === "cct" ? kelvinHex(ql.kelvin, 0.95) : hsvHex(ql.hue, ql.sat, 0.9);
+    b.style.color = ql.mode === "cct" || [25, 40, 130, 175].includes(ql.hue) ? "#111" : "#fff";
+    b.addEventListener("click", () => {
+      Object.assign(adjustVars, ql, ql.mode === "cct" ? { kelvin: Math.min(hi, Math.max(lo, ql.kelvin)) } : {});
+      p.querySelectorAll("input[data-k]").forEach((inp) => { inp.value = adjustVars[inp.dataset.k]; paintRange(inp); });
+      refreshAdjust();
+    });
+    q.append(b);
+  }
+  refreshAdjust(true);
+  $("adjustDialog").showModal();
+}
+function adjustLook() {
+  const v = adjustVars;
+  if (v.mode === "off") return null;
+  return v.mode === "hsi" ? { mode: "hsi", hue: v.hue, sat: v.sat, bri: v.bri } : { mode: "cct", kelvin: v.kelvin, bri: v.bri };
+}
+function refreshAdjust(quiet) {
+  const p = $("adjustPanel"), v = adjustVars, look = adjustLook();
+  p.querySelectorAll("[data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === v.mode));
+  p.querySelector(".hsi").hidden = v.mode !== "hsi"; p.querySelector(".cct").hidden = v.mode !== "cct"; p.querySelector(".bri").hidden = v.mode === "off";
+  $("adjustSwatch").style.background = look ? lookHex(look, 0.35 + 0.65 * look.bri / 100) : "#000";
+  if (!quiet) show(adjustId, look);                      // live on the light (the newest look wins if it's busy)
+}
+$("adjustSave").addEventListener("click", () => {
+  const name = (prompt("A name for this look (e.g. the podcast or the guest):") || "").trim();
+  if (!name) return;
+  const lights = {}, looks = {};
+  for (const t of tubes) {
+    const s = state[t.id], look = s && s.on && s.look && s.look.bri > 0 ? { ...s.look } : null;
+    lights[t.mac] = look;
+    if (look && t.job !== "off" && !looks[t.job]) looks[t.job] = look;
+  }
+  const first = Object.values(lights).find((l) => l);
+  const scene = { name, button: first ? lookHex(first, 0.55) : "#3a4250", looks, lights };
+  const i = scenes.findIndex((s) => s.name === name);
+  if (i >= 0) { if (!confirm(`There is already a scene called “${name}”. Replace it?`)) return; scenes[i] = scene; }
+  else { const off = scenes.findIndex((s) => s.name === "Off"); scenes.splice(off >= 0 ? off : scenes.length, 0, scene); }
+  saveScenes(); renderScenes(); setStatus(`Saved the lights as the scene “${name}”.`);
 });
 
 // ---- add a tube ---------------------------------------------------------------------------------------------------

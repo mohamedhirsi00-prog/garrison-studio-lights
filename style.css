@@ -96,3 +96,6 @@ dialog input:not([type]):focus, dialog input[type=text]:focus { border-color: va
 .sw span { color: var(--muted); font-size: 12px; }
 .sw button { position: absolute; top: -8px; right: -8px; padding: 0 7px; border-radius: 50%; font-size: 14px; line-height: 22px; }
 #coloursBtn { white-space: nowrap; }
+.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 12px; }
+.quick button { padding: 10px 6px; font-size: 13px; font-weight: 700; }
+.kelvin { background: linear-gradient(90deg, #ff9f43, #ffd9a8, #fff4e8, #e8f0ff, #c9dcff); height: 6px; border-radius: 3px; }
